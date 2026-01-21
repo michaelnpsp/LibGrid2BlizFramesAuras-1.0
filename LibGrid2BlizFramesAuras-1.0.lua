@@ -112,7 +112,7 @@ local function GetAuras(unit, key, filter, max, sortRule, sortDir, onlyIDs, resu
 		else
 			local auraInstanceID = aurasFrame.auraInstanceID
 			if auraInstanceID then
-				result[1] = onlyIDs and auraInstanceID or GetAuraDataByAuraInstanceID(auraInstanceID)
+				result[1] = onlyIDs and auraInstanceID or GetAuraDataByAuraInstanceID(unit, auraInstanceID)
 			end
 		end
 	elseif filter then -- fallback to standard filter
