@@ -1,4 +1,5 @@
-local lib = LibStub:NewLibrary("LibGrid2BlizFramesAuras-1.0", 1)
+local MAJOR, MINOR = "LibGrid2BlizFramesAuras-1.0", 1
+local lib = LibStub:NewLibrary(MAJOR, MINOR)
 if not lib then return end
 
 local next = next
@@ -8,11 +9,9 @@ local GetUnitAuras = C_UnitAuras.GetUnitAuras
 local GetUnitAuraInstanceIDs = C_UnitAuras.GetUnitAuraInstanceIDs
 local GetAuraDataByAuraInstanceID = C_UnitAuras.GetAuraDataByAuraInstanceID
 
-local hooked
-local initialized
-local callbacks = {}
-local unit2frame = {}
 local resultTable = {}
+local callbacks = lib.callbacks or {}
+local unit2frame = lib.unit2frame or {}
 
 -------------------------------------
 -- Initialization code
@@ -34,7 +33,7 @@ local function UpdateCache()
 end
 
 local function UpdateUnit(frame)
-	if initialized then
+	if lib.enabled == MINOR then
 		local unit = frame.unit
 		if unit and not strfind(unit, "^nameplate") then -- skip nameplates
 			unit2frame[unit] = frame
@@ -46,22 +45,22 @@ local function UpdateUnit(frame)
 end
 
 local function UpdateHooks()
-	if not hooked then
+	if not lib.hooked then
 		hooksecurefunc("CompactUnitFrame_UpdateAuras", UpdateUnit)
 		hooksecurefunc("CompactUnitFrame_SetUnit", UpdateUnit)
-		hooked = true
+		lib.hooked = true
 	end
 end
 
-local  function Initialize()
+local function Initialize()
 	UpdateCache()
 	UpdateHooks()
-	initialized = true
+	lib.enabled = MINOR
 end
 
 local function Deinitialize()
 	wipe(unit2frame)
-	initialized = nil
+	lib.enabled = nil
 end
 
 -------------------------------------
@@ -90,9 +89,9 @@ function lib.UnregisterCallback(obj)
 	end
 end
 
--------------------------------------
--- Methods to Get Auras
--------------------------------------
+-----------------------------------------------------
+-- Functions to access Blizzard unit frames Get Auras
+-----------------------------------------------------
 
 local function GetAuras(unit, key, filter, max, sortRule, sortDir, onlyIDs, result)
 	result = result or resultTable
@@ -100,12 +99,20 @@ local function GetAuras(unit, key, filter, max, sortRule, sortDir, onlyIDs, resu
 	local frame = unit2frame[unit]
 	if frame then
 		local aurasFrame = frame[key]
-		for i=1, min(#aurasFrame, max or 8) do
-			local auraFrame = aurasFrame[i]
-			if not auraFrame:IsShown() then break end
-			local auraInstanceID = auraFrame.auraInstanceID
+		local count = min(#aurasFrame, max or 8)
+		if count>0 then
+			for i=1, count do
+				local auraFrame = aurasFrame[i]
+				if not auraFrame:IsShown() then break end
+				local auraInstanceID = auraFrame.auraInstanceID
+				if auraInstanceID then
+					result[#result+1] = onlyIDs and auraInstanceID or GetAuraDataByAuraInstanceID(unit, auraInstanceID)
+				end
+			end
+		else
+			local auraInstanceID = aurasFrame.auraInstanceID
 			if auraInstanceID then
-				result[#result+1] = onlyIDs and auraInstanceID or GetAuraDataByAuraInstanceID(unit, auraInstanceID)
+				result[1] = onlyIDs and auraInstanceID or GetAuraDataByAuraInstanceID(auraInstanceID)
 			end
 		end
 	elseif filter then -- fallback to standard filter
@@ -122,38 +129,32 @@ function lib.GetUnitBuffs(unit, filter, max, sortRule, sortDir, onlyIDs, result)
 	return GetAuras(unit, "buffFrames", filter, max, sortRule, sortDir, onlyIDs, result)
 end
 
+function lib.GetUnitBuffsDefensive(unit, filter, max, sortRule, sortDir, onlyIDs, result)
+	return GetAuras(unit, "CenterDefensiveBuff", filter, max, sortRule, sortDir, onlyIDs, result)
+end
+
 function lib.GetUnitDebuffs(unit, filter, max, sortRule, sortDir, onlyIDs, result)
 	return GetAuras(unit, "debuffFrames", filter, max, sortRule, sortDir, onlyIDs, result)
 end
 
-function lib.GetUnitDefensives(unit, filter, max, sortRule, sortDir, onlyIDs, result)
-	result = result or resultTable
-	wipe(result)
-	local frame = unit2frame[unit]
-	if frame then
-		local auraFrame = frame.CenterDefensiveBuff
-		if auraFrame then
-			local auraInstanceID = auraFrame.auraInstanceID
-			if auraInstanceID then
-				result[1] = onlyIDs and auraInstanceID or GetAuraDataByAuraInstanceID(auraInstanceID)
-			end
-		end
-	elseif filter then
-		if onlyIDs then
-			return GetUnitAuraInstanceIDs(unit, filter, max or 8, sortRule, sortDir)
-		else
-			return GetUnitAuras(unit, filter, max or 8, sortRule, sortDir)
-		end
-	end
-	return result
+function lib.GetUnitDebuffsDispellable(unit, filter, max, sortRule, sortDir, onlyIDs, result)
+	return GetAuras(unit, "dispelDebuffFrames", filter, max, sortRule, sortDir, onlyIDs, result)
 end
 
+local FILTER2FUNC = {
+	["HELPFUL"] = lib.GetUnitBuffs,
+	["HELPFUL|PLAYER"] = lib.GetUnitBuffs,
+	["HELPFUL|RAID"] = lib.GetUnitBuffs,
+	["HELPFUL|EXTERNAL_DEFENSIVE"] = lib.GetUnitBuffsDefensive,
+	["HARMFUL"] = lib.GetUnitDebuffs,
+	["HARMFUL|RAID"] = lib.GetUnitDebuffsDispellable,
+}
+
 function lib.GetUnitAuras(unit, filter, max, sortRule, sortDir, onlyIDs, result)
-	if strfind(filter, "EXTERNAL_DEFENSIVE") then
-		return lib:GetUnitDefensives(unit, filter, max, sortRule, sortDir, onlyIDs, result)
-	elseif strfind(filter, "^HELPFUL")	 then
-		return GetAuras(unit, "buffFrames", filter, max, sortRule, sortDir, onlyIDs, result)
-	else -- HARMFUL
-		return GetAuras(unit, "debuffFrames", filter, max, sortRule, sortDir,onlyIDs, result)
-	end
+	local func = FILTER2FUNC[filter] or lib.GetUnitBuffs
+	return func(unit, filter, max, sortRule, sortDir, onlyIDs, result)
 end
+
+-- Higher versions of the library need access to this tables
+lib.callbacks  = callbacks
+lib.unit2frame = unit2frame
