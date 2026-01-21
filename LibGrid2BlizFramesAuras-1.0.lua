@@ -60,7 +60,7 @@ local  function Initialize()
 end
 
 local function Deinitialize()
-	wipe(units2frame)
+	wipe(unit2frame)
 	initialized = nil
 end
 
@@ -127,6 +127,7 @@ function lib.GetUnitDebuffs(unit, filter, max, sortRule, sortDir, onlyIDs, resul
 end
 
 function lib.GetUnitDefensives(unit, filter, max, sortRule, sortDir, onlyIDs, result)
+	result = result or resultTable
 	wipe(result)
 	local frame = unit2frame[unit]
 	if frame then
