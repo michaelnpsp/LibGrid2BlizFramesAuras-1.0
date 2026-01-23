@@ -10,12 +10,31 @@ local GetUnitAuraInstanceIDs = C_UnitAuras.GetUnitAuraInstanceIDs
 local GetAuraDataByAuraInstanceID = C_UnitAuras.GetAuraDataByAuraInstanceID
 
 local resultTable = {}
+local dummyFunc = function() end
+local hooked = lib.hooked or {}
 local callbacks = lib.callbacks or {}
 local unit2frame = lib.unit2frame or {}
 
--------------------------------------
--- Initialization code
--------------------------------------
+--------------------------------------------------------------------------
+-- Init & Update
+--------------------------------------------------------------------------
+
+local function HookSafe(name, func) -- used to avoid double hooking in new library minor versions, because old hooks cannot be removed
+	if not hooked[name] then
+		hooksecurefunc(name, func)
+		hooked[name] = func
+	end
+end
+
+local function UpdateUnit(frame)
+	local unit = frame.unit
+	if unit and not strfind(unit, "^nameplate") then -- skip nameplates
+		unit2frame[unit] = frame
+		for _, func in next, callbacks do
+			func(unit)
+		end
+	end
+end
 
 local function UpdateCache()
 	local function save(frameName)
@@ -32,40 +51,24 @@ local function UpdateCache()
 	end
 end
 
-local function UpdateUnit(frame)
-	if lib.enabled == MINOR then
-		local unit = frame.unit
-		if unit and not strfind(unit, "^nameplate") then -- skip nameplates
-			unit2frame[unit] = frame
-			for _, func in next, callbacks do
-				func(unit)
-			end
-		end
-	end
-end
-
 local function UpdateHooks()
-	if not lib.hooked then
-		hooksecurefunc("CompactUnitFrame_UpdateAuras", UpdateUnit)
-		hooksecurefunc("CompactUnitFrame_SetUnit", UpdateUnit)
-		lib.hooked = true
-	end
+	HookSafe( "CompactUnitFrame_UpdateAuras", function(frame) lib.CompactUnitFrame_UpdateAuras(frame); end )
+	lib.CompactUnitFrame_UpdateAuras = UpdateUnit
 end
 
 local function Initialize()
 	UpdateCache()
 	UpdateHooks()
-	lib.enabled = MINOR
 end
 
 local function Deinitialize()
 	wipe(unit2frame)
-	lib.enabled = nil
+	lib.CompactUnitFrame_UpdateAuras = dummyFunc
 end
 
--------------------------------------
+--------------------------------------------------------------------------
 -- Callbacks registration
--------------------------------------
+--------------------------------------------------------------------------
 
 function lib.RegisterCallback(obj, func)
 	if not next(callbacks) then
@@ -89,9 +92,9 @@ function lib.UnregisterCallback(obj)
 	end
 end
 
------------------------------------------------------
+--------------------------------------------------------------------------
 -- Functions to access Blizzard unit frames Get Auras
------------------------------------------------------
+--------------------------------------------------------------------------
 
 local function GetAuras(unit, key, filter, max, sortRule, sortDir, onlyIDs, result)
 	result = result or resultTable
@@ -155,6 +158,7 @@ function lib.GetUnitAuras(unit, filter, max, sortRule, sortDir, onlyIDs, result)
 	return func(unit, filter, max, sortRule, sortDir, onlyIDs, result)
 end
 
--- Higher versions of the library need access to this tables
+-- Higher versions of the library will need to access those variables
+lib.hooked = hooked
 lib.callbacks  = callbacks
 lib.unit2frame = unit2frame
